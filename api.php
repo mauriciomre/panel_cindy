@@ -30,6 +30,11 @@ function need(PDO $db, bool $admin = false): array {
     if ($admin && $u['rol'] !== 'admin') fail('Solo administradores', 403);
     return $u;
 }
+// PHP < 8.1 devuelve los enteros de SQLite como texto ("0" es verdadero en JS): se castean acá.
+function ints(array $rows, array $cols): array {
+    foreach ($rows as &$r) foreach ($cols as $c) if (array_key_exists($c, $r) && $r[$c] !== null) $r[$c] = (int)$r[$c];
+    return $rows;
+}
 function str($v, int $max): string { return mb_substr(trim((string)$v), 0, $max); }
 function cleanUrl(string $u): string {
     // Solo http(s) o rutas relativas: evita javascript: y similares.
@@ -70,7 +75,9 @@ case 'state': {
         FROM apps a LEFT JOIN prefs p ON p.app_id = a.id AND p.user_id = :u
         WHERE (a.owner_id IS NULL AND (a.visibilidad = 'todos' OR " . ($u['rol'] === 'admin' ? '1' : '0') . ")) OR a.owner_id = :u");
     $s->execute([':u' => $u['id']]);
-    out(['user' => $u, 'categorias' => $cats, 'apps' => $s->fetchAll()]);
+    out(['user' => ints([$u], ['id'])[0],
+         'categorias' => ints($cats, ['id', 'orden']),
+         'apps' => ints($s->fetchAll(), ['id', 'categoria_id', 'orden_global', 'owner_id', 'favorita', 'oculta', 'orden', 'orden_fav'])]);
 }
 
 case 'setup': {
@@ -207,7 +214,7 @@ case 'cat_reorder': {
 
 case 'users': {
     need($db, true);
-    out(['users' => $db->query('SELECT id, usuario, nombre, rol, activo FROM users ORDER BY nombre')->fetchAll()]);
+    out(['users' => ints($db->query('SELECT id, usuario, nombre, rol, activo FROM users ORDER BY nombre')->fetchAll(), ['id', 'activo'])]);
 }
 
 case 'user_save': {
